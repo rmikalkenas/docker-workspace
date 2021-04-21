@@ -1,0 +1,73 @@
+version: '3.7'
+
+networks:
+    main:
+        name: docker-workspace-network
+        driver: bridge
+
+volumes:
+    workspace:
+        driver: local
+    mysql:
+        driver: local
+    elasticsearch:
+        driver: local
+    elasticsearch_backup:
+        driver: local
+
+services:
+    workspace:
+        image: rokasm/workspace:7.4
+        container_name: workspace
+        ports:
+            - "8000-8005:8000-8005"
+        volumes:
+            - ./:/var/www
+            - ./.docker/data/workspace/shared:/home/laradock/shared
+            - $SSH_AUTH_SOCK:/ssh-agent # Forward local machine SSH key to docker
+        expose:
+            - "8000-8005"
+        tty: true
+        networks:
+            - main
+        environment:
+            SSH_AUTH_SOCK: /ssh-agent # Forward local machine SSH key to docker
+
+    mysql:
+        image: mysql:5.7
+        ports:
+            - 13306:3306
+        volumes:
+            - ./.docker/data/mysql:/var/lib/mysql
+            - ./.docker/config/mysql:/etc/mysql/conf.d
+        environment:
+            MYSQL_ROOT_PASSWORD: 'root'
+            TZ: 'Europe/Vilnius'
+        depends_on:
+            - workspace
+        networks:
+            - main
+
+    elasticsearch:
+        image: docker.elastic.co/elasticsearch/elasticsearch:7.7.1
+        environment:
+            - node.name=elasticsearch
+            - cluster.name=es-docker-cluster
+            - discovery.type=single-node
+            - bootstrap.memory_lock=true
+            - "ES_JAVA_OPTS=-Xms1G -Xmx1G"
+            - path.repo=/opt/elasticsearch/backup
+        ulimits:
+            memlock:
+                soft: -1
+                hard: -1
+        volumes:
+            - elasticsearch:/usr/share/elasticsearch/data
+            - elasticsearch_backup:/opt/elasticsearch/backup
+            # docker-compose exec elasticsearch chown -R elasticsearch:elasticsearch /opt/elasticsearch/backup
+        ports:
+            - 9200:9200
+        depends_on:
+            - workspace
+        networks:
+            - main
